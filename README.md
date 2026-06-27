@@ -20,3 +20,5 @@ Key skills demonstrated:
   - Pod security context: non-root, read-only filesystem, dropped capabilities
   - Systematic kubectl-based troubleshooting methodology
   - Rolling update mechanics and rollback procedure
+
+<img width="1440" height="1840" alt="image" src="./t01_kubernetes_object_map.png" />
