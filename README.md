@@ -21,4 +21,30 @@ Key skills demonstrated:
   - Systematic kubectl-based troubleshooting methodology
   - Rolling update mechanics and rollback procedure
 
+Architecture Diagram:
 <img width="1440" height="1840" alt="image" src="./t01_kubernetes_object_map.png" />
+
+The Complete Object Relationship Map:
+Namespace: myapp-dev
+│
+├── ConfigMap: myapp-config
+│     └── Data: APP_ENV, APP_LOG_LEVEL, app.ini
+│
+├── Secret: myapp-secret
+│     └── Data: DB_PASSWORD, API_KEY, DATABASE_URL
+│
+├── Deployment: myapp
+│     └── spec.selector: {app: myapp, component: api}
+│           └── manages →
+│                 ReplicaSet: myapp-<hash>
+│                       └── manages →
+│                             Pod: myapp-<hash>-<rand> (replica 1)
+│                             Pod: myapp-<hash>-<rand> (replica 2)
+│                                   └── reads →
+│                                         ConfigMap: myapp-config (env vars + volume)
+│                                         Secret: myapp-secret (env vars)
+│
+└── Service: myapp
+      └── spec.selector: {app: myapp, component: api}
+            └── routes traffic to → Pod (replica 1), Pod (replica 2)
+
