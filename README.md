@@ -1,4 +1,5 @@
 Project: Production Helm Chart Engineering
+
 Chart: myapp — multi-environment Helm chart with full values schema
 
 What I built:
