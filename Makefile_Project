@@ -14,6 +14,34 @@ help: ## Show all available targets with short descriptions.
 
 .PHONY: k8s-apply-namespaces-myapp-dev k8s-apply-configmaps-myapp
 
+# -------------------------------------------------------------------------------
+# 					The Complete Object Relationship Map
+# 
+# Namespace: myapp-dev
+# │
+# ├── ConfigMap: myapp-config
+# │     └── Data: APP_ENV, APP_LOG_LEVEL, app.ini
+# │
+# ├── Secret: myapp-secret
+# │     └── Data: DB_PASSWORD, API_KEY, DATABASE_URL
+# │
+# ├── Deployment: myapp
+# │     └── spec.selector: {app: myapp, component: api}
+# │           └── manages →
+# │                 ReplicaSet: myapp-<hash>
+# │                       └── manages →
+# │                             Pod: myapp-<hash>-<rand> (replica 1)
+# │                             Pod: myapp-<hash>-<rand> (replica 2)
+# │                                   └── reads →
+# │                                         ConfigMap: myapp-config (env vars + volume)
+# │                                         Secret: myapp-secret (env vars)
+# │
+# └── Service: myapp
+#       └── spec.selector: {app: myapp, component: api}
+#             └── routes traffic to → Pod (replica 1), Pod (replica 2)
+#
+#
+
 # ---------- GLOBAL CONFIG --------------------------------------
 # Kubernetes directories
 K8S_NAMESPACE_DIR               ?= manifests/namespaces
@@ -49,141 +77,141 @@ K8S_APP_PODS_CRASHING           ?= crashing-pod
 # ----------------------------------------------------------------------
 .PHONY: k8s-apply-namespaces-myapp-dev
 k8s-apply-namespaces-myapp-dev: ## Apply Dev Namespace
-    @echo "Apply dev namespace"
-    kubectl apply -f $(K8S_NAMESPACE_DIR)/myapp-dev.yaml
+	@echo "Apply dev namespace"
+	kubectl apply -f $(K8S_NAMESPACE_DIR)/myapp-dev.yaml
 
-    @echo "Verify dev namespace"
-    kubectl get namespace $(K8S_APP_NAMESPACE_DEV)
+	@echo "Verify dev namespace"
+	kubectl get namespace $(K8S_APP_NAMESPACE_DEV)
 
-    # See the labels you set
-    # Expected output:
-    # NAME        STATUS   AGE   LABELS
-    # myapp-dev   Active   5s    environment=dev,managed-by=tutorial-t01,team=myapp
-    @echo "See the labels you set"
-    kubectl get namespace $(K8S_APP_NAMESPACE_DEV) --show-labels
+	# See the labels you set
+	# Expected output:
+	# NAME        STATUS   AGE   LABELS
+	# myapp-dev   Active   5s    environment=dev,managed-by=tutorial-t01,team=myapp
+	@echo "See the labels you set, Get into the habit of labelling"
+	kubectl get namespace $(K8S_APP_NAMESPACE_DEV) --show-labels
 
 .PHONY: k8s-apply-configmaps-myapp
-k8s-apply-configmaps-myapp: ## Apply Configmaps for given namespace
-    @echo "Apply configmaps $(K8S_APP_CONFIGMAPS) in namespace $(K8S_APP_NAMESPACE_DEV)"
-    kubectl apply -f $(K8S_CONFIGMAP_DIR)/myapp-config.yaml
+k8s-apply-configmaps-myapp: ## Apply Configmaps (non-sensitive data) for given namespace
+	@echo "Apply configmaps $(K8S_APP_CONFIGMAPS) in namespace $(K8S_APP_NAMESPACE_DEV)"
+	kubectl apply -f $(K8S_CONFIGMAP_DIR)/myapp-config.yaml
 
-    @echo "Verify Configmaps contents"
-    kubectl get configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "Verify Configmaps contents"
+	kubectl get configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV)
 
-    @echo "See the actual configmaps data"
-    kubectl describe configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "See the actual configmaps data"
+	kubectl describe configmap $(K8S_APP_CONFIGMAPS) -n $(K8S_APP_NAMESPACE_DEV)
 
 .PHONY: k8s-apply-secrets-myapp
 k8s-apply-secrets-myapp: ## Apply Secrets
-    @echo "Apply secrets $(K8S_APP_SECRETS) in namespace $(K8S_APP_NAMESPACE_DEV)"
-    kubectl apply -f $(K8S_SECRETS_DIR)/myapp-secret.yaml
+	@echo "Apply secrets $(K8S_APP_SECRETS) in namespace $(K8S_APP_NAMESPACE_DEV)"
+	kubectl apply -f $(K8S_SECRETS_DIR)/myapp-secret.yaml
 
-    @echo "Verify it exists (values won't show)"
-    kubectl get secret $(K8S_APP_SECRETS) -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "Verify it exists (values won't show)"
+	kubectl get secret $(K8S_APP_SECRETS) -n $(K8S_APP_NAMESPACE_DEV)
 
-    # Expected: myapp-dev-db-password
-    @echo "Decode a value to verify it round-trips correctly"
-    kubectl get secret $(K8S_APP_SECRETS) -n $(K8S_APP_NAMESPACE_DEV) -o jsonpath='{.data.DB_PASSWORD}' | base64 --decode
+	# Expected: myapp-dev-db-password
+	@echo "Decode a value to verify it round-trips correctly"
+	kubectl get secret $(K8S_APP_SECRETS) -n $(K8S_APP_NAMESPACE_DEV) -o jsonpath='{.data.DB_PASSWORD}' | base64 --decode
     
 # You can create secrets imperatively without writing 
 # base64 by hand. kubectl handles encoding automatically
 # This is equivalent to the YAML above — useful for quick testing
 .PHONY: k8s-create-secrets-myapp
 k8s-create-secrets-myapp: ## Create Secrets 
-    kubectl create secret generic myapp-secret-test \
-    --from-literal=DB_PASSWORD="myapp-dev-db-password" \
-    --from-literal=API_KEY="myapp-dev-api-key-abc123" \
-    --namespace=$(K8S_APP_NAMESPACE_DEV) \
-    --dry-run=client -o yaml
-    # --dry-run=client -o yaml prints the YAML without applying it
-    # This is how you see what kubectl would create — useful for learning and debugging
+	kubectl create secret generic myapp-secret-test \
+	--from-literal=DB_PASSWORD="myapp-dev-db-password" \
+	--from-literal=API_KEY="myapp-dev-api-key-abc123" \
+	--namespace=$(K8S_APP_NAMESPACE_DEV) \
+	--dry-run=client -o yaml
+	# --dry-run=client -o yaml prints the YAML without applying it
+	# This is how you see what kubectl would create — useful for learning and debugging
 
 .PHONY: k8s-apply-pod-myapp
 k8s-apply-pod-myapp: ## Applying Pod
-    @echo "Apply Pod"
-    kubectl apply -f $(K8S_PODS_DIR)/myapp-pod.yaml
+	@echo "Apply Pod"
+	kubectl apply -f $(K8S_PODS_DIR)/myapp-pod.yaml
 
-    @echo "Watch what happens to pod Press Ctrl+C after you see it stabilize (or start crashing)"
-    kubectl get pod $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV) -w
+	@echo "Watch what happens to pod Press Ctrl+C after you see it stabilize (or start crashing)"
+	kubectl get pod $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV) -w
 
 # -----------------------------------------------------------------------------------------
 #                         TROUBLESHOOTING POD 
 # -----------------------------------------------------------------------------------------
-.PHONY: k8s_troubleshoot_pod
-k8s_troubleshoot_pod: ## Learn How to troubleshoot pod
-    @echo "Step 1: Read the Events"
-    kubectl describe pod $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV)
-    #Scroll to the Events section at the bottom. You will see something like:
-    #Events:
-    #  Warning  Unhealthy  5s    kubelet  Readiness probe failed: Get "http://10.244.0.5:8000/health": 
-    #                                     dial tcp 10.244.0.5:8000: connect: connection refused
-    @echo "Step 2: Check Logs"
-    kubectl logs $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-troubleshoot-pod
+k8s-troubleshoot-pod: ## Learn How to troubleshoot pod
+	@echo "Step 1: Read the Events"
+	kubectl describe pod $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV)
+	#Scroll to the Events section at the bottom. You will see something like:
+	#Events:
+	#  Warning  Unhealthy  5s    kubelet  Readiness probe failed: Get "http://10.244.0.5:8000/health": 
+	#                                     dial tcp 10.244.0.5:8000: connect: connection refused
+	@echo "Step 2: Check Logs"
+	kubectl logs $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV)
 
-    @echo "If the container already restarted, check the previous instance's logs"
-    #kubectl logs $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV) --previous
-    
-    @echo "Step 3: Understand the Root Cause"
-    @echo "The generic FastAPI image doesn't have a /main.py or a /health endpoint. The uvicorn main:app command fails because there's no main.py."
-    
-    @echo "Step 4: Fix — Use an image that actually has a working app"
-    # You're going to create a minimal working FastAPI application inside the cluster for learning purposes:
-    # Create a simple working app using a Python image : manifests/pods/myapp-pod-fixed.yaml 
-    kubectl apply -f $(K8S_PODS_DIR)/myapp-pod-fixed.yaml
+	@echo "If the container already restarted, check the previous instance's logs"
+	#kubectl logs $(K8S_APP_PODS) -n $(K8S_APP_NAMESPACE_DEV) --previous
 
-    @echo "Watch it come up"
-    kubectl get pod myapp-pod-working -n $(K8S_APP_NAMESPACE_DEV) -w
-    @echo "Expected output after ~15 seconds:"
-    #NAME                STATUS    READY   RESTARTS   AGE
-    #myapp-pod-working   Running   1/1     0          20s
+	@echo "Step 3: Understand the Root Cause"
+	@echo "The generic FastAPI image doesn't have a /main.py or a /health endpoint. The uvicorn main:app command fails because there's no main.py."
 
-    @echo "Clean up the broken pod"
-    kubectl delete pod $(K8S_APP_PODS_WORKING) -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "Step 4: Fix — Use an image  
+	# You're going to create a minimal working FastAPI application inside the cluster for learning purposes:
+	# Create a simple working app using a Python image : manifests/pods/myapp-pod-fixed.yaml 
+	kubectl apply -f $(K8S_PODS_DIR)/myapp-pod-fixed.yaml
 
-.PHONY: k8s_apply_deployment
-k8s_apply_deployment: ## Apply deployment, and start pod replica
-    kubectl apply -f $(K8S_DEPLOYMENTS_DIR)/myapp-deployment.yaml
+	@echo "Watch it come up"
+	kubectl get pod myapp-pod-working -n $(K8S_APP_NAMESPACE_DEV) -w
+	@echo "Expected output after ~15 seconds:"
+	#NAME                STATUS    READY   RESTARTS   AGE
+	#myapp-pod-working   Running   1/1     0          20s
 
-    @echo "Watch the rollout"
-    kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "Clean up the broken pod"
+	kubectl delete pod $(K8S_APP_PODS_WORKING) -n $(K8S_APP_NAMESPACE_DEV)
+# ---------------------------------------------------------------------------------------------------------------
+.PHONY: k8s-apply-deployment
+k8s-apply-deployment: ## Apply deployment, and start pod replica
+	kubectl apply -f $(K8S_DEPLOYMENTS_DIR)/myapp-deployment.yaml
 
-    # Expected:
-    # Waiting for deployment "myapp" rollout to finish: 0 of 2 updated replicas are available...
-    # Waiting for deployment "myapp" rollout to finish: 1 of 2 updated replicas are available...
-    # deployment "myapp" successfully rolled out
+	@echo "Watch the rollout"
+	kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
 
-    @echo "See your pods"
-    kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o wide
+	# Expected:
+	# Waiting for deployment "myapp" rollout to finish: 0 of 2 updated replicas are available...
+	# Waiting for deployment "myapp" rollout to finish: 1 of 2 updated replicas are available...
+	# deployment "myapp" successfully rolled out
 
-    # Expected:
-    # NAME                     READY   STATUS    RESTARTS   AGE   IP           NODE
-    # myapp-7d8b9c4f5-x2kp9   1/1     Running   0          30s   10.244.0.6   k8s-learning
-    # myapp-7d8b9c4f5-m8nq7   1/1     Running   0          30s   10.244.0.7   k8s-learning
+	@echo "See your pods"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -o wide
+
+	# Expected:
+	# NAME                     READY   STATUS    RESTARTS   AGE   IP           NODE
+	# myapp-7d8b9c4f5-x2kp9   1/1     Running   0          30s   10.244.0.6   k8s-learning
+	# myapp-7d8b9c4f5-m8nq7   1/1     Running   0          30s   10.244.0.7   k8s-learning
 
 # Understand the ReplicaSet relationship:
-.PHONY: k8s_get_replicaset
-k8s_get_replicaset: ##  Get Replica Set
-    # A Deployment creates a ReplicaSet, which creates Pods
-    # Deployment → ReplicaSet → Pod(s)
-    kubectl get replicaset -n $(K8S_APP_NAMESPACE_DEV)
-    # NAME               DESIRED   CURRENT   READY   AGE
-    # myapp-7d8b9c4f5    2         2         2       2m
-    # The hash (7d8b9c4f5) is derived from the pod template spec
-    # When you update the Deployment, a NEW ReplicaSet is created
-    # This is how rollback works — Kubernetes keeps old ReplicaSets around
+.PHONY: k8s-get-replicaset
+k8s-get-replicaset: ##  Get Replica Set
+	# A Deployment creates a ReplicaSet, which creates Pods
+	# Deployment → ReplicaSet → Pod(s)
+	kubectl get replicaset -n $(K8S_APP_NAMESPACE_DEV)
+	# NAME               DESIRED   CURRENT   READY   AGE
+	# myapp-7d8b9c4f5    2         2         2       2m
+	# The hash (7d8b9c4f5) is derived from the pod template spec
+	# When you update the Deployment, a NEW ReplicaSet is created
+	# This is how rollback works — Kubernetes keeps old ReplicaSets around
 
-.PHONY: k8s_apply_services
-k8s_apply_services: ## Apply services
-    kubectl apply -f $(K8S_SERVICES_DIR)/myapp-service.yaml
-    kubectl apply -f $(K8S_SERVICES_DIR)/myapp-nodeport.yaml
+.PHONY: k8s-apply-services
+k8s-apply-services: ## Apply services
+	kubectl apply -f $(K8S_SERVICES_DIR)/myapp-service.yaml
+	kubectl apply -f $(K8S_SERVICES_DIR)/myapp-nodeport.yaml
 
-    @echo "Verify services"
-    kubectl get services -n $(K8S_APP_NAMESPACE_DEV)
+	@echo "Verify services"
+	kubectl get services -n $(K8S_APP_NAMESPACE_DEV)
 
-    # Expected:
-    # NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
-    # myapp            ClusterIP   10.96.240.123   <none>        80/TCP         5s
-    # myapp-nodeport   NodePort    10.96.110.45    <none>        80:30080/TCP   5s
+	# Expected:
+	# NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+	# myapp            ClusterIP   10.96.240.123   <none>        80/TCP         5s
+	# myapp-nodeport   NodePort    10.96.110.45    <none>        80:30080/TCP   5s
 
 # ------------------------------------------------------------------------------------------
 #                           Test Connectivity
@@ -191,15 +219,15 @@ k8s_apply_services: ## Apply services
 #       2. Outside the cluster
 # ------------------------------------------------------------------------------------------
 # 1. Run a temporary debug pod inside the cluster
-.PHONY: k8s_create_tmp_pod
-k8s_create_tmp_pod:
-    kubectl run debug-pod \
-    --image=busybox:1.35 \
-    --namespace=$(K8S_APP_NAMESPACE_DEV) \
-    --restart=Never \
-    --rm \
-    -it \
-    -- sh
+.PHONY: k8s-create-tmp-pod
+k8s-create-tmp-pod:
+	kubectl run debug-pod \
+	--image=busybox:1.35 \
+	--namespace=$(K8S_APP_NAMESPACE_DEV) \
+	--restart=Never \
+	--rm \
+	-it \
+	-- sh
 
 # Now, Inside the debug pod shell:
 # Test 1: Test ClusterIP service by DNS name
@@ -213,8 +241,8 @@ k8s_create_tmp_pod:
 
 # Test connectivity from outside the cluster using minikube:
 # minikube creates a tunnel to access NodePort and LoadBalancer services
-k8s_create_tunnel:
-    minikube service myapp-nodeport --namespace=$(K8S_APP_NAMESPACE_DEV) --profile=k8s-learning --url
+k8s-create-tunnel:
+	minikube service myapp-nodeport --namespace=$(K8S_APP_NAMESPACE_DEV) --profile=k8s-learning --url
 
 # This returns a URL like: http://192.168.49.2:30080
 # Open that URL in your Windows browser or test with curl:
@@ -231,21 +259,21 @@ k8s_create_tunnel:
 # -----------------------------------------------------------------------------------------------------
 
 # Update the image to a new version
-.PHONY: k8s_set_new_image_version
-k8s_set_new_image_version:
-    kubectl set image deployment/myapp \
-    myapp=nginx:1.26-alpine \
-    --namespace=$(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-set-new-image-version
+k8s-set-new-image-version:
+	kubectl set image deployment/myapp \
+	myapp=nginx:1.26-alpine \
+	--namespace=$(K8S_APP_NAMESPACE_DEV)
 
 # Watch the rolling update happen
-.PHONY: k8s_watch_rolling_update
-k8s_watch_rolling_update:
-    kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV) -w
+.PHONY: k8s-watch-rolling-update
+k8s-watch-rolling-update:
+	kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV) -w
 
 # Watch pods being replaced one by one
-.PHONY: k8s_watch_pod_update
-k8s_watch_pod_update:
-    kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -w
+.PHONY: k8s-watch-pod-update
+k8s-watch-pod-update:
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -w
 
 # ------------------------------------------------------------------------------------------
 #                   Rollback to previous version
@@ -255,26 +283,26 @@ k8s_watch_pod_update:
 # REVISION  CHANGE-CAUSE
 # 1         <none>
 # 2         <none>
-.PHONY: k8s_check_rollout_history
-k8s_check_rollout_history:
-    kubectl rollout history deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-check-rollout-history
+k8s-check-rollout-history:
+	kubectl rollout history deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
 
 # Roll back to the previous version
-.PHONY: k8s_rollback_to_previous_version
-k8s_rollback_to_previous_version:
-    kubectl rollout undo deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-rollback-to-previous-version
+k8s-rollback-to-previous-version:
+	kubectl rollout undo deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
 
 # Verify rollback
-.PHONY: k8s_verify_rollback_status
-k8s_verify_rollback_status:
-    kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
-    kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp
+.PHONY: k8s-verify-rollback-status
+k8s-verify-rollback-status:
+	kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp
 
 # Check which image is now running
 # Expected: nginx:1.25-alpine (the original)
-PHONY: k8s_check_image_after_rollback
-k8s_check_image_after_rollback:
-    kubectl get deployment myapp -n $(K8S_APP_NAMESPACE_DEV) -o jsonpath='{.spec.template.spec.containers[0].image}'
+PHONY: k8s-check-image-after-rollback
+k8s-check-image-after-rollback:
+	kubectl get deployment myapp -n $(K8S_APP_NAMESPACE_DEV) -o jsonpath='{.spec.template.spec.containers[0].image}'
 
 # ---------------------------------------------------------------------------------------------------------------------
 #
@@ -284,26 +312,26 @@ k8s_check_image_after_rollback:
 #
 # ---------------------------------------------------------------------------------------------------------------------
 # Step 1. Deliberately break it
-.PHONY: k8s_set_wrong_image_name
-k8s_set_wrong_image_name:
-    kubectl set image deployment/myapp \
-    myapp=nginx:this-tag-does-not-exist-99999 \
-    --namespace=$(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-set-wrong-image-name
+k8s-set-wrong-image-name:
+	kubectl set image deployment/myapp \
+	myapp=nginx:this-tag-does-not-exist-99999 \
+	--namespace=$(K8S_APP_NAMESPACE_DEV)
 
 # Step 2. Watch what happens
 # Within 30–60 seconds you'll see a new pod appear with status ErrImagePull, then ImagePullBackOff.
-.PHONY: k8s_watch_pod_after_wrong_image_set
-k8s_watch_pod_after_wrong_image_set:
-    kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -w
+.PHONY: k8s-watch-pod-after-wrong-image-set
+k8s-watch-pod-after-wrong-image-set:
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -w
 
 # Step 3. Diagnose :
 # Get the name of the bad pod
 #BAD_POD=$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp --field-selector=status.phase!=Running -o jsonpath='{.items[0].metadata.name}')
 
 # Describe it
-.PHONY: k8s_describe_pod_after_wrong_image_set
-k8s_describe_pod_after_wrong_image_set:
-    kubectl describe pod $$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp --field-selector=status.phase!=Running -o jsonpath='{.items[0].metadata.name}') -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-describe-pod-after-wrong-image-set
+k8s-describe-pod-after-wrong-image-set:
+	kubectl describe pod $$(kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp --field-selector=status.phase!=Running -o jsonpath='{.items[0].metadata.name}') -n $(K8S_APP_NAMESPACE_DEV)
 
 #In the Events section you'll see:
 #Warning  Failed   2s  kubelet  Failed to pull image "nginx:this-tag-does-not-exist-99999": 
@@ -315,15 +343,15 @@ k8s_describe_pod_after_wrong_image_set:
 #Key observation: The old pods are still running. The rolling update maxUnavailable: 0 strategy means Kubernetes won't kill the old pods until new ones are healthy. Your old pods are still serving traffic. This is by design.
 
 # Step 4. Fix the image tag — roll back to known-good
-.PHONY: k8s_rollback_to_known_good_after_wrong_image_set
-k8s_roolback_to_known_good_after_wrong_image_set:
-    kubectl rollout undo deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-rollback-to-known-good-after-wrong-image-set
+k8s-rollback-to-known-good-after-wrong-image-set:
+	kubectl rollout undo deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
 
 # Step 5. Verify recovery
-.PHONY: k8s_verify_rollout_after_rollback_to_known_good_image
-k8s_verify_rollout_after_rollback_to_known_good_image:
-    kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
-    kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp
+.PHONY: k8s-verify-rollout-after-rollback-to-known-good-image
+k8s-verify-rollout-after-rollback-to-known-good-image:
+	kubectl rollout status deployment/myapp -n $(K8S_APP_NAMESPACE_DEV)
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp
 
 # ---------------------------------------------------------------------------------------------------------------------
 #
@@ -333,28 +361,28 @@ k8s_verify_rollout_after_rollback_to_known_good_image:
 #
 # ---------------------------------------------------------------------------------------------------------------------
 # Step 1. 
-.PHONY: k8s_apply_pod_that_crashes:
-k8s_apply_pod_that_crashes:
-    kubectl apply -f $(K8S_PODS_DIR)/crashing-pod.yaml
+.PHONY: k8s-apply-pod-that-crashes
+k8s-apply-pod-that-crashes:
+	kubectl apply -f $(K8S_PODS_DIR)/crashing-pod.yaml
 
 # Step 2. Watch it crash and restart
 #You'll see:
 #NAME           READY   STATUS             RESTARTS   AGE
 #crashing-pod   0/1     CrashLoopBackOff   3          45s
-.PHONY: k8s_watch_crashing_pod
-k8s_watch_crashing_pod:
-    kubectl get pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV) -w
+.PHONY: k8s-watch-crashing-pod
+k8s-watch-crashing-pod:
+	kubectl get pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV) -w
 
 # Step 3. Diagnose:
 # Check current logs
-.PHONY: k8s_check_crashed_pod_logs
-k8s_check_crashed_pod_logs:
-    kubectl logs crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-check-crashed-pod-logs
+k8s-check-crashed-pod-logs:
+	kubectl logs crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
 
 # Step 4. Check previous instance logs (the one that crashed)
-.PHONY: k8s_check_crashed_pod_logs
-k8s_check_previous_inatance_pod_logs:
-    kubectl logs crashing-pod -n $(K8S_APP_NAMESPACE_DEV) --previous
+.PHONY: k8s-check-previous-instance-pod-logs
+k8s-check-previous-instance-pod-logs:
+	kubectl logs crashing-pod -n $(K8S_APP_NAMESPACE_DEV) --previous
 
 # Step 5. Describe to see restart count and events
 #What you'll see in describe:
@@ -372,14 +400,14 @@ k8s_check_previous_inatance_pod_logs:
 ###143	                        SIGTERM — graceful shutdown signal sent by Kubernetes
 ###126	                        Command not executable
 ###127	                        Command not found
-.PHONY: k8s_describe_crashing_pod
-k8s_describe_crashing_pod:
-    kubectl describe pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-describe-crashing-pod
+k8s-describe-crashing-pod:
+	kubectl describe pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
 
 # Step 5. Clean up
-.PHONY: k8s_delete_crashing_pod
-k8s_delete_crashing_pod:
-    kubectl delete pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-delete-crashing-pod
+k8s-delete-crashing-pod:
+	kubectl delete pod crashing-pod -n $(K8S_APP_NAMESPACE_DEV)
 
 # ---------------------------------------------------------------------------------------------------------------------
 #
@@ -389,26 +417,26 @@ k8s_delete_crashing_pod:
 #
 # ---------------------------------------------------------------------------------------------------------------------
 # Step 1.
-.PHONY: k8s_apply_pod_with_high_memory_usage
-k8s_apply_pod_with_high_memory_usage:
-    kubectl apply -f $(K8S_PODS_DIR)/oom-pod.yaml
+.PHONY: k8s-apply-pod-with-high-memory-usage
+k8s-apply-pod-with-high-memory-usage:
+	kubectl apply -f $(K8S_PODS_DIR)/oom-pod.yaml
 
 # Step 2. Watch it
 #Within a few seconds:
 #NAME      READY   STATUS      RESTARTS   AGE
 #oom-pod   0/1     OOMKilled   0          4s
-.PHONY: k8s_watch_high_memory_usage_pod
-k8s_watch_high_memory_usage_pod:
-    kubectl get pod oom-pod -n $(K8S_APP_NAMESPACE_DEV) -w
+.PHONY: k8s-watch-high-memory-usage-pod
+k8s-watch-high-memory-usage-pod:
+	kubectl get pod oom-pod -n $(K8S_APP_NAMESPACE_DEV) -w
 
 # Step 3. Diagnose:
 #You'll see:
 #Last State:     Terminated
 #  Reason:       OOMKilled
 #  Exit Code:    137
-.PHONY: k8s_describe_high_memroy_usage_pod
-k8s_describe_high_memroy_usage_pod:
-    kubectl describe pod oom-pod -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-describe-high-memroy-usage-pod
+k8s-describe-high-memroy-usage-pod:
+	kubectl describe pod oom-pod -n $(K8S_APP_NAMESPACE_DEV)
 
 #What to do in production:
 #1.	Check what the pod was actually consuming: kubectl top pod oom-pod -n myapp-dev (if it's still running)
@@ -418,6 +446,6 @@ k8s_describe_high_memroy_usage_pod:
 #5.	If misconfigured limit: increase the limit to match actual usage + 20% headroom
 
 # Step 4. Clean up
-.PHONY: k8s_delete_high_memory_usage_pod
-k8s_delete_high_memory_usage_pod:
-    kubectl delete pod oom-pod -n $(K8S_APP_NAMESPACE_DEV)
+.PHONY: k8s-delete-high-memory-usage-pod
+k8s-delete-high-memory-usage-pod:
+	kubectl delete pod oom-pod -n $(K8S_APP_NAMESPACE_DEV)

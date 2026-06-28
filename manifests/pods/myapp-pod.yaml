@@ -80,6 +80,10 @@ spec:
           readOnly: true
       
       # ── HEALTH PROBES ────────────────────────────────────────────────────
+      # Think of it like this:
+      # Startup: “Did the app boot successfully?”
+      # Readiness: “Can I send user traffic to it now?”
+      # Liveness: “Is it still alive, or should I restart it?”
       # readinessProbe: pod receives traffic ONLY when this passes
       # If it fails, the pod is removed from Service endpoints (no traffic)
       readinessProbe:

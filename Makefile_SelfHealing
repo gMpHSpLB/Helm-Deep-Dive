@@ -1,0 +1,44 @@
+# Use Bash for shell commands in recipes.
+# This gives us better shell features than plain sh.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+.PHONY: help
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---------- APP NAMESPACES PER ENV ------------------------
+# These match manifests/myapp-dev.yaml
+# Namespace for dev myapp workloads
+K8S_APP_NAMESPACE_DEV           ?= myapp-dev
+
+# ------------------------------------------------------------------------------------------------------
+#
+# 							ReplicaSet and Self-Healing Demonstration
+#
+# You'll see the deleted pod enter Terminating state and a new pod immediately start ContainerCreating. 
+# Within seconds you're back to 2/2 Running. This is Kubernetes self-healing.
+# 1.	The ReplicaSet controller watches pod count continuously
+# 2.	It sees 1 pod where there should be 2
+# 3.	It immediately creates a new Pod spec
+# 4.	Scheduler assigns it to a node
+# 5.	kubelet pulls image and starts container
+# 6.	Pod becomes Ready → service endpoints updated
+# 7.	Total time: typically 10–30 seconds
+#
+# ------------------------------------------------------------------------------------------------------
+.PHONY : k8s_self_healing
+k8s_self_healing: ## Delete Pod and immediately — the Deployment controller creates a replacement
+	# Get a pod name
+	@POD_TO_DELETE=$$(kubectl get pods -n myapp-dev -l app=myapp -o jsonpath='{.items[0].metadata.name}'); \
+	echo "Going to delete: $$POD_TO_DELETE"; \
+	echo "Delete pod : $$POD_TO_DELETE from Namespace : $(K8S_APP_NAMESPACE_DEV)"; \
+	kubectl delete pod $$POD_TO_DELETE -n $(K8S_APP_NAMESPACE_DEV)
+
+	@echo "Immediately watch — the Deployment controller creates a replacement"
+	kubectl get pods -n $(K8S_APP_NAMESPACE_DEV) -l app=myapp -w
