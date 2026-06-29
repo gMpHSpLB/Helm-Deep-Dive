@@ -1,0 +1,291 @@
+# Use Bash for shell commands in recipes.
+# This gives us better shell features than plain sh.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+.PHONY: help
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY: 
+
+# ------------------------------------------------------------------------------------------------------------------
+# 					What Helm Actually Is (And What It Isn't)
+# ------------------------------------------------------------------------------------------------------------------
+# 1. A templating engine. It renders Go templates into Kubernetes YAML. The templates live 
+#    in charts/myapp/templates/. The values that fill those templates live in values.yaml 
+#    and environment overrides.
+#
+# 2. A release manager. When you run helm install, Helm creates a release — a named, versioned 
+#    deployment of a chart. It stores the rendered manifest and metadata as a Secret in the namespace. 
+#    This is how helm rollback works: it re-applies the stored manifest from a previous release revision.
+#
+# 3. A package manager. Charts can be packaged as .tgz and stored in a registry (OCI or classic). 
+#    Teams pull and deploy charts without needing the source. This is how kube-prometheus-stack and 
+#    ArgoCD are distributed.
+#
+# --------------------------------------------------------------------------------------------------------------------
+#								   What Helm does NOT do:
+# --------------------------------------------------------------------------------------------------------------------
+#•	It does not watch for drift (ArgoCD does that)
+#•	It does not manage secrets safely (External Secrets Operator does that)
+#•	It does not validate that your application actually works after deployment 
+#   (health probes and observability do that)
+#
+# ---------------------------------------------------------------------------------------------------------------------
+# 							The critical Helm mental model:
+# ---------------------------------------------------------------------------------------------------------------------
+# 					values.yaml (defaults)
+# 						+
+# 					values-dev.yaml (overrides)          ← helm install -f values-dev.yaml
+# 						+
+# 					--set key=value (CLI overrides)      ← highest priority, avoid in             
+# 																		production
+# 						│
+# 						▼
+# 					helm template engine renders all .yaml files in templates/
+# 						│
+# 						▼
+# 					kubectl apply sends rendered YAML to API server
+# 						│
+# 						▼
+# 					Release stored as Secret in namespace (helm history shows this)
+#
+#  Priority order (highest wins): --set > -f override.yaml > values.yaml
+#  This hierarchy is where most Helm bugs live. A --set from a CI script silently overrides your values-prod.yaml
+#
+# ------------------------------------------------------------------------------------------------------------------
+
+# ---------- GLOBAL CONFIG --------------------------------------
+# ----------------------------------------------------------
+MINIKUBE_PROFILE                ?= k8s-learning
+
+# Kubernetes directories
+K8S_NAMESPACE_DIR               ?= manifests/namespaces
+K8S_CONFIGMAP_DIR               ?= manifests/configmaps
+K8S_SECRETS_DIR                 ?= manifests/secrets
+K8S_PODS_DIR                    ?= manifests/pods
+K8S_DEPLOYMENTS_DIR             ?= manifests/deployments
+K8S_SERVICES_DIR                ?= manifests/services
+
+# ------------------------------------------------------------
+# myapp Helm chart and env values
+K8S_APP_HELM_CHART_DIR			?= charts/myapp
+K8S_APP_DEV_VALUES_FILE			?= charts/myapp/values-dev.yaml
+
+# ---------- HELM RELEASE NAMES PER ENV ----------
+# Keep releases separate so dev/staging/prod can be managed independently.
+# Helm release name for dev myapp
+K8S_MYAPP_RELEASE_DEV     ?= myapp-dev-myapp# Release name is derived; Helm release= CHART_NAME(myapp-dev) + chart myapp
+# Helm release name for staging myapp
+K8S_MYAPP_RELEASE_STAGING ?= myapp-staging-myapp# Release name is derived; Helm release= CHART_NAME(myapp-staging) + chart myapp
+# Helm release name for prod myapp
+K8S_MYAPP_RELEASE_PROD    ?= myapp-prod-myapp# Release name is derived; Helm release= CHART_NAME(myapp-prod) + chart myapp
+
+
+# ---------- APP NAMESPACES PER ENV ------------------------
+# These match manifests/myapp-dev.yaml
+# Namespace for dev myapp workloads
+K8S_APP_NAMESPACE_DEV           ?= myapp-dev
+# Namespace for staging myapp workloads
+K8S_APP_NAMESPACE_STAGING       ?= myapp-staging
+# Namespace for prod myapp workloads
+K8S_APP_NAMESPACE_PROD          ?= myapp-prod
+
+
+# -------------------------------------------------------------------------------------------------------
+# 								Render and Validate Before You Install
+#						Two ways:
+#							1. rendering using helm template pure client side
+#							2. rendering using helm install server side with dry-run
+# -------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------
+#   •	helm template: pure client-side rendering. Fast. 
+#                      Works offline. Doesn't validate 
+#                      Kubernetes field names.
+#
+#	Note: This is the most important Helm skill: 
+#         Never run helm install without first inspecting what it will actually produce.
+# -------------------------------------------------------------------------------------------------------
+# Client Side Rendering all templates with dev values — no cluster needed
+.PHONY : k8s-helm-clientside-render-all-templates-for-dev
+k8s-helm-clientside-render-all-templates-for-dev: ## Render all templates with dev values — no cluster needed
+	@echo "Render all templates for myapp with dev values — no cluster needed"
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+	--debug
+
+# Save rendered output to inspect it
+.PHONY k8s-save-helm-clientside-render-all-templates-for-dev-to-file
+k8s-save-helm-clientside-render-all-templates-for-dev-to-file: ## Save helm rendered output for myapp for dev to inspect it
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+	> /tmp/myapp-dev-rendered.yaml
+
+	@echo "Inspect what was generated"
+	cat /tmp/myapp-dev-rendered.yaml
+
+.PHONY k8s-count-resource-generated-after-helm-clientside-rendering
+k8s-count-resource-generated-after-helm-clientside-rendering: ## Count resources generated
+	grep "^kind:" /tmp/myapp-dev-rendered.yaml
+
+# -------------------------------------------------------------------------------------------------------
+#   •	helm install: 1. Server-side dry-run - validates against real API schema. 
+#					     This sends the rendered YAML to the API server for schema validation
+#					     without actually creating. 
+#					     Catches field name typos that helm template misses. 
+#					  2. Requires a running cluster.
+#	Note: This is the most important Helm skill: 
+#         Never run helm install without first inspecting what it will actually produce.
+# -------------------------------------------------------------------------------------------------------
+# Server-side dry-run — validates against real API schema
+.PHONY : k8s-helm-serverside-install-dry-run-all-templates-for-dev
+k8s-helm-serverside-install-dry-run-all-templates-for-dev: ## Server-side dry-run — validates against real API schema. Requires a running cluster.
+	@echo "Ensure cluster is running"
+	$(MAKE) -f Makefile_Setup ensure-minikube
+	@echo "Helm install all templates for myapp with dev values \
+		— Server-side dry-run — validates against real API schema validation \
+		without actually creating."
+	helm install $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+	--dry-run \
+	--debug
+
+# -------------------------------------------------------------------------------------------------------
+# 								Helm Install,
+#								Helm Upgrade, and 
+#								Helm History
+# -------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------
+#								Helm Install
+# -------------------------------------------------------------------------------------------------------
+
+# Server-side install — validates against real API schema
+.PHONY : k8s-helm-serverside-install-all-templates-for-dev
+k8s-helm-serverside-install-all-templates-for-dev: ## Server-side — validates against real API schema. Requires a running cluster.
+	@echo "Ensure cluster is running"
+	$(MAKE) -f Makefile_Setup ensure-minikube
+
+	@echo "Helm install all templates for myapp with dev values \
+		— Server-side dry-run — validates against real API schema validation \
+		without actually creating."
+	@echo "Using below flags:"
+	@echo "		--wait: blocks until all pods are Ready (uses health probes)."
+	@echo "		--timeout: fail if not ready within this time."
+	@echo "		--create-namespace: creates the namespace if it doesn't exist"
+	helm install $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+  	--create-namespace \
+  	--wait \
+  	--timeout 5m
+
+.PHONY : k8s-verify-installed-helm-release-for-dev
+k8s-verify-installed-helm-release-for-dev: ## Verify Installed Helm Release for dev
+	@echo "Verify Installed Helm Release for dev"
+	helm list -n $(K8S_APP_NAMESPACE_DEV)
+
+.PHONY : k8s-get-resources-created-by-helm
+k8s-get-resources-created-by-helm: ## See what resources Helm created
+	helm get manifest $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
+.PHONY : k8s-check-rendered-values-by-helm
+k8s-check-rendered-values-by-helm: ## Check the rendered values (what actually went in)
+	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
+.PHONY : k8s-check-all-rendered-values-by-helm
+k8s-check-all-rendered-values-by-helm: ## Check the all values including defaults	
+	helm get values $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) --all
+
+# -------------------------------------------------------------------------------------------------------
+#								  Helm Upgrade
+#							(Make a change and upgrade)
+#							Hint (helm upgrade)
+# -------------------------------------------------------------------------------------------------------
+.PHONY : k8s-change-log-level-by-helm-upgrade
+k8s-change-log-level-by-helm-upgrade: ## Change log level via upgrade (simulating a config change)
+	@echo "Change log level via upgrade (simulating a config change)"
+	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+	--set config.APP_LOG_LEVEL=debug \
+	--wait
+
+# -------------------------------------------------------------------------------------------------------
+#								  Helm History
+#							Hint (helm history)
+# -------------------------------------------------------------------------------------------------------
+# See revision history
+# Expected:
+# REVISION  UPDATED        STATUS      CHART        APP VERSION  DESCRIPTION
+# 1         ...            superseded  myapp-1.0.0  1.0.0        Install complete
+# 2         ...            deployed    myapp-1.0.0  1.0.0        Upgrade complete
+.PHONY : k8s-check-helm-revision-history
+k8s-check-helm-revision-history: ## See revision history
+	@echo "Check helm revision history"
+	helm history $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
+# -------------------------------------------------------------------------------------------------------
+#								  Helm Rollback
+#							Hint (helm rollback, helm history)
+# -------------------------------------------------------------------------------------------------------
+# Rollback to revision 1
+.PHONY : k8s-rollback-to-helm-specific-revision
+k8s-rollback-to-helm-specific-revision: ## Rollback to helm revision 1
+	@echo "Rollback to helm revision 1"
+	helm rollback $(K8S_MYAPP_RELEASE_DEV) 1 -n $(K8S_APP_NAMESPACE_DEV) --wait
+
+# Verify rollback
+.PHONY : k8s-verify-helm-rollback 
+k8s-verify-helm-rollback: ## Verify helm rollback
+	@echo "Verify helm rollback"
+	@echo "Check Revision 3 appears — rollback creates a new revision, not a time-reversal"
+	helm history $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+
+# -------------------------------------------------------------------------------------------------------
+#								  Install the helm-diff Plugin & Verify
+# -------------------------------------------------------------------------------------------------------
+.PHONY : k8s-install-helm-diff-plugin
+k8s-install-helm-diff-plugin: ## Install the helm-diff Plugin
+	@echo "Install helm diff plugin"
+	helm plugin install https://github.com/databus23/helm-diff
+
+	@echo "Verify helm diff plugin"
+	helm plugin list
+
+# ----------------------------------------------------------------------------------------------------------------
+#				-	helm diff shows you what will change before you apply an upgrade. 
+#					This is non-negotiable for production operations.
+#				-	This is how you operate Helm in production. You never run helm upgrade 
+#					without first running helm diff upgrade. If the diff shows changes you 
+#					didn't expect, you stop, investigate, and understand before proceeding.
+# -----------------------------------------------------------------------------------------------------------------
+# Now test it — make a change and see the diff BEFORE applying
+.PHONY : k8s-check-helm-diff-before-applying
+k8s-check-helm-diff-before-applying: ## Make a change and see the diff BEFORE applying
+	@echo "Make a change and see the diff BEFORE applying"
+# 	Expected output (coloured diff):
+# 	diff
+# 	default, myapp-dev, Deployment (apps) has changed:
+#   	# Source: myapp/templates/deployment.yaml
+#   	.	..
+# 	-   replicas: 1
+# 	+   replicas: 2
+	helm diff upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) \
+	--set replicaCount=2
+
+
+
+

@@ -455,5 +455,5 @@ k8s-delete-high-memory-usage-pod:
 full-teardown: ## Clean Everything
 	@echo "Delete the namespace (this deletes everything inside it)""
 	kubectl delete namespace $(K8S_APP_NAMESPACE_DEV)
-	# Stop minikube
+	@echo "Stop minikube"
 	$(MAKE) -f Makefile_Setup stop-minikube
