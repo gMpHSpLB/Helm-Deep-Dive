@@ -25,6 +25,8 @@ Key skills demonstrated:
   - Chart unit testing with assertions on rendered templates
 
 The critical Helm mental model:
+
+
 values.yaml (defaults)
       +
 values-dev.yaml (overrides)          ← helm install -f values-dev.yaml
@@ -42,7 +44,8 @@ kubectl apply sends rendered YAML to API server
 Release stored as Secret in namespace (helm history shows this)
 Priority order (highest wins): --set > -f override.yaml > values.yaml
 
-Chart Architecture: What a Production Chart Looks Like
+Chart Architecture: What a Production Chart Looks Like:
+
 charts/myapp/
 ├── Chart.yaml              ← chart metadata: name, version, appVersion, dependencies
 ├── values.yaml             ← default values (safe for dev, not production)
