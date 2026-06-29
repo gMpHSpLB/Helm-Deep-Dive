@@ -86,4 +86,3 @@ Usage: {{ include "myapp.envPrefix" . }}
 {{- define "myapp.envPrefix" -}}
 {{- printf "%s-%s" (include "myapp.fullname" .) .Values.environment }}
 {{- end }}
-{{- end }}

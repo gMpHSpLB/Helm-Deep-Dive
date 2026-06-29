@@ -10,7 +10,7 @@ help: ## Show all available targets with short descriptions.
 	# This target reads the Makefile and prints any line ending with ##.
 	# Use this when you want to discover available commands quickly.
 	# Expected output: a list of targets and one-line descriptions.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s --> %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 .PHONY: 
 
@@ -98,6 +98,33 @@ K8S_APP_NAMESPACE_STAGING       ?= myapp-staging
 K8S_APP_NAMESPACE_PROD          ?= myapp-prod
 
 
+# ----------------------------------------------------------------------------------------------------------------
+#				                                    Helm Linting 
+#                  (Lint the chart — catches template syntax errors and best-practice violations)
+# -----------------------------------------------------------------------------------------------------------------
+.PHONY : k8s-helm-linting-values-files
+k8s-helm-linting-values-files: ## int the chart — catches template syntax errors and best-practice violations
+	@echo "Lint the chart — catches template syntax errors and best-practice violations"
+	helm lint $(K8S_APP_HELM_CHART_DIR) -f charts/myapp/values.yaml
+
+	@echo "Lint all three environments"
+	@for env in dev staging prod; do \
+		echo "=== Linting $$env ===" ; \
+		helm lint $(K8S_APP_HELM_CHART_DIR) -f charts/myapp/values-$$env.yaml ; \
+	done; \
+
+.PHONY : k8s-helm-strict-linting-values-files
+k8s-helm-strict-linting-values-files: ## Strict mode — treats warnings as errors  — catches template syntax errors and best-practice violations
+	@echo "Strict mode — treats warnings as errors. \
+		Lint the chart — catches template syntax errors and best-practice violations"
+	helm lint $(K8S_APP_HELM_CHART_DIR) --strict  -f charts/myapp/values.yaml
+
+	@echo "Lint all three environments"
+	@for env in dev staging prod; do \
+		echo "=== Linting $$env ===" ; \
+		helm lint $(K8S_APP_HELM_CHART_DIR) --strict  -f charts/myapp/values-$$env.yaml ;\
+	done; \
+
 # -------------------------------------------------------------------------------------------------------
 # 								Render and Validate Before You Install
 #						Two ways:
@@ -123,7 +150,7 @@ k8s-helm-clientside-render-all-templates-for-dev: ## Render all templates with d
 	--debug
 
 # Save rendered output to inspect it
-.PHONY k8s-save-helm-clientside-render-all-templates-for-dev-to-file
+.PHONY : k8s-save-helm-clientside-render-all-templates-for-dev-to-file
 k8s-save-helm-clientside-render-all-templates-for-dev-to-file: ## Save helm rendered output for myapp for dev to inspect it
 	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
 	-f $(K8S_APP_DEV_VALUES_FILE) \
@@ -133,7 +160,7 @@ k8s-save-helm-clientside-render-all-templates-for-dev-to-file: ## Save helm rend
 	@echo "Inspect what was generated"
 	cat /tmp/myapp-dev-rendered.yaml
 
-.PHONY k8s-count-resource-generated-after-helm-clientside-rendering
+.PHONY : k8s-count-resource-generated-after-helm-clientside-rendering
 k8s-count-resource-generated-after-helm-clientside-rendering: ## Count resources generated
 	grep "^kind:" /tmp/myapp-dev-rendered.yaml
 
@@ -286,6 +313,33 @@ k8s-check-helm-diff-before-applying: ## Make a change and see the diff BEFORE ap
 	--namespace $(K8S_APP_NAMESPACE_DEV) \
 	--set replicaCount=2
 
+# ----------------------------------------------------------------------------------------------------------------
+#									Chart Unit Tests with helm-unittest
+#	Unit tests validate that your templates render correctly given specific values. They run without a cluster.
+# -----------------------------------------------------------------------------------------------------------------
 
+# -------------------------------------------------------------------------------------------------------
+#								  Install helm-unittest plugin and Verify
+# -------------------------------------------------------------------------------------------------------
+.PHONY : k8s-install-helm-unittest-plugin
+k8s-install-helm-unittest-plugin: ## Install the helm-unittest Plugin and Verify
+	@echo "Install helm-unittest plugin"
+	helm plugin install https://github.com/helm-unittest/helm-unittest
 
+	@echo "Verify helm diff plugin"
+	helm plugin list
+
+.PHONY : k8s-run-all-unit-tests
+k8s-run-all-unit-tests: ## Run all unit tests
+	@echo "Run all unint tests"
+	# Expected output:
+	# ### Chart [ myapp ] charts/myapp
+	#
+	#  PASS  Deployment template tests   charts/myapp/tests/deployment_test.yaml
+	#  PASS  Service template tests      charts/myapp/tests/service_test.yaml
+	#
+	# Charts:      1 passed, 1 total
+	# Test Suites: 2 passed, 2 total
+	# Tests:       15 passed, 15 total
+	helm unittest $(K8S_APP_HELM_CHART_DIR)
 
