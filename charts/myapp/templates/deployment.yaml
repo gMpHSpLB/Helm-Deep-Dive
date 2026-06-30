@@ -8,55 +8,53 @@ metadata:
   annotations:
     deployment.kubernetes.io/revision: "1"
     app.kubernetes.io/environment: {{ .Values.environment | quote }}
+
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
-  {{/*
-  When HPA is enabled, we REMOVE the replicas field from the Deployment.
-  If replicas is set, the Deployment controller fights the HPA —
-  every reconciliation resets the replica count to the static value.
-  This is a very common and subtle Helm+HPA bug.
-  */}}
+
   selector:
     matchLabels:
       {{- include "myapp.selectorLabels" . | nindent 6 }}
+
   strategy:
     {{- toYaml .Values.strategy | nindent 4 }}
+
   template:
     metadata:
       labels:
         {{- include "myapp.selectorLabels" . | nindent 8 }}
-        {{- include "myapp.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml . | nindent 6 }}
         {{- end }}
       annotations:
-        {{/*
-        This checksum annotation forces a pod restart whenever the ConfigMap
-        or Secret changes. Without this, pods keep running with stale config.
-        The checksum of the ConfigMap is included in the pod spec annotation —
-        when the ConfigMap changes, the checksum changes, the pod template
-        changes, and Kubernetes performs a rolling update.
-        */}}
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ include "myapp.configmapChecksum" . }}
+        checksum/secret: {{ include "myapp.secretChecksum" . }}
         {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml . | nindent 6 }}
         {{- end }}
+
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+
       serviceAccountName: {{ include "myapp.serviceAccountName" . }}
+
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      
       {{- with .Values.initContainers }}
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+
       containers:
         - name: {{ .Chart.Name }}
           image: {{ include "myapp.image" . }}
@@ -65,10 +63,13 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+
           env:
             - name: POD_NAME
               valueFrom:
@@ -115,6 +116,7 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+
           volumeMounts:
             - name: app-config
               mountPath: /etc/myapp
@@ -128,6 +130,7 @@ spec:
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.readiness.path }}
@@ -136,6 +139,7 @@ spec:
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
             successThreshold: {{ .Values.probes.readiness.successThreshold }}
+
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
@@ -144,12 +148,14 @@ spec:
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
             successThreshold: {{ .Values.probes.liveness.successThreshold }}
+
           startupProbe:
             httpGet:
               path: {{ .Values.probes.startup.path }}
               port: {{ .Values.probes.startup.port }}
             failureThreshold: {{ .Values.probes.startup.failureThreshold }}
             periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+
       volumes:
         - name: app-config
           configMap:
@@ -163,14 +169,17 @@ spec:
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+
       {{- with .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}

@@ -22,7 +22,7 @@ resources:
 
 service:
   type: NodePort
-  nodePort: 30080
+  nodePort: 30081
 
 # In dev, no PDB — single replica blocks node drain
 podDisruptionBudget:

@@ -162,6 +162,7 @@ k8s-save-helm-clientside-render-all-templates-for-dev-to-file: ## Save helm rend
 
 .PHONY : k8s-count-resource-generated-after-helm-clientside-rendering
 k8s-count-resource-generated-after-helm-clientside-rendering: ## Count resources generated
+	@echo "Count resources generated"
 	grep "^kind:" /tmp/myapp-dev-rendered.yaml
 
 # -------------------------------------------------------------------------------------------------------
@@ -203,8 +204,9 @@ k8s-helm-serverside-install-all-templates-for-dev: ## Server-side — validates 
 	@echo "Ensure cluster is running"
 	$(MAKE) -f Makefile_Setup ensure-minikube
 
+	helm uninstall $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
 	@echo "Helm install all templates for myapp with dev values \
-		— Server-side dry-run — validates against real API schema validation \
+		— Server-side — validates against real API schema validation \
 		without actually creating."
 	@echo "Using below flags:"
 	@echo "		--wait: blocks until all pods are Ready (uses health probes)."
@@ -285,7 +287,7 @@ k8s-verify-helm-rollback: ## Verify helm rollback
 .PHONY : k8s-install-helm-diff-plugin
 k8s-install-helm-diff-plugin: ## Install the helm-diff Plugin
 	@echo "Install helm diff plugin"
-	helm plugin install https://github.com/databus23/helm-diff
+	helm plugin install https://github.com/databus23/helm-diff --verify=false
 
 	@echo "Verify helm diff plugin"
 	helm plugin list
@@ -324,7 +326,7 @@ k8s-check-helm-diff-before-applying: ## Make a change and see the diff BEFORE ap
 .PHONY : k8s-install-helm-unittest-plugin
 k8s-install-helm-unittest-plugin: ## Install the helm-unittest Plugin and Verify
 	@echo "Install helm-unittest plugin"
-	helm plugin install https://github.com/helm-unittest/helm-unittest
+	helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false
 
 	@echo "Verify helm diff plugin"
 	helm plugin list

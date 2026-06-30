@@ -86,3 +86,11 @@ Usage: {{ include "myapp.envPrefix" . }}
 {{- define "myapp.envPrefix" -}}
 {{- printf "%s-%s" (include "myapp.fullname" .) .Values.environment }}
 {{- end }}
+
+{{- define "myapp.configmapChecksum" -}}
+{{ toYaml .Values.config | sha256sum }}
+{{- end -}}
+
+{{- define "myapp.secretChecksum" -}}
+{{ toYaml .Values.secrets | sha256sum }}
+{{- end -}}
