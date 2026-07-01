@@ -552,3 +552,58 @@ k8s-atomic-helm-upgrade-prevention-approach: ## Use --atomic, automatically roll
 	--atomic \
 	--timeout 5m \
 	-n $(K8S_APP_NAMESPACE_DEV)
+
+# -----------------------------------------------------------------------------------------------------------------
+#						Debugging Exercise 4 — The Silent Values Merge Trap
+#	Scenario: You have a nested map in values.yaml. You try to override one key with -f override.yaml. 
+#             Helm replaces the ENTIRE map.
+#
+# Setup:
+# 	1. Your values.yaml has:
+# 		yaml
+# 		config:
+# 		APP_ENV: "dev"
+# 		APP_LOG_LEVEL: "info"
+# 		APP_PORT: "8000"
+# 		APP_WORKERS: "2"
+# 	2. Your override file has:
+# 		yaml
+# 		config:
+# 		APP_LOG_LEVEL: "debug"
+#
+# 	What you expect: All four keys present, with APP_LOG_LEVEL changed to debug.
+# 	What actually happens:
+# 		bash
+# 		cat > /tmp/partial-override.yaml << 'EOF'
+# 		config:
+# 		APP_LOG_LEVEL: "debug"
+# 		EOF
+#
+# 	helm template myapp-dev ./charts/myapp \
+# 	-f /tmp/partial-override.yaml \
+# 	--namespace myapp-dev | grep -A 10 "kind: ConfigMap"
+#
+# 	You'll see only APP_LOG_LEVEL in the ConfigMap. APP_ENV, APP_PORT, and APP_WORKERS are gone.
+# 		Why: Helm merges values files at the top level, but nested maps are REPLACED, not merged. 
+# 			The override file's config: map completely replaces the base config: map.
+#
+# 	Fix options:
+#
+# 	Option A — Always provide the complete map in overrides (what your environment files already do):
+# 		yaml
+# 		# values-dev.yaml always has the complete config block
+# 		config:
+# 		APP_ENV: "dev"
+# 		APP_LOG_LEVEL: "debug"  # only this changed
+# 		APP_PORT: "8000"
+# 		APP_WORKERS: "2"
+#
+# 	Option B — Use --set for individual key changes (single values only):
+# 		helm upgrade myapp-dev ./charts/myapp \
+# 		-f charts/myapp/values-dev.yaml \
+# 		--set config.APP_LOG_LEVEL=debug \
+# 		-n myapp-dev
+#
+# 	The professional rule: Use -f for complete environment value files. Use --set only for per-deployment 
+# 	dynamic values (like image tag). Never use -f for partial overrides of nested maps.
+# -----------------------------------------------------------------------------------------------------------------

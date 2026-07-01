@@ -1,0 +1,108 @@
+# Use Bash for shell commands in recipes.
+# This gives us better shell features than plain sh.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+.PHONY: help
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s --> %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY: 
+
+# --------------------------------------------------------------------------------------------------------------------
+#								   Helmfile: Multi-Environment Orchestration
+# --------------------------------------------------------------------------------------------------------------------
+#		Helmfile is what you use when you need to manage multiple Helm releases across multiple environments in a 
+#		declarative way. It's the missing glue between Helm and GitOps.
+
+# -------------------------------- GLOBAL CONFIG --------------------------------------
+# -------------------------------------------------------------------------------------
+MINIKUBE_PROFILE                ?= k8s-learning
+
+# Kubernetes directories
+K8S_NAMESPACE_DIR               ?= manifests/namespaces
+K8S_CONFIGMAP_DIR               ?= manifests/configmaps
+K8S_SECRETS_DIR                 ?= manifests/secrets
+K8S_PODS_DIR                    ?= manifests/pods
+K8S_DEPLOYMENTS_DIR             ?= manifests/deployments
+K8S_SERVICES_DIR                ?= manifests/services
+
+# ------------------------------------------------------------
+# myapp Helm chart and env values
+K8S_APP_HELM_CHART_DIR			?= charts/myapp
+K8S_APP_DEV_VALUES_FILE			?= charts/myapp/values-dev.yaml
+K8S_APP_STAGING_VALUES_FILE		?= charts/myapp/values-staging.yaml
+K8S_APP_PROD_VALUES_FILE		?= charts/myapp/values-prod.yaml
+
+# ---------- HELM RELEASE NAMES PER ENV ----------
+# Keep releases separate so dev/staging/prod can be managed independently.
+# Helm release name for dev myapp
+K8S_MYAPP_RELEASE_DEV     ?= myapp-dev-myapp# Release name is derived; Helm release= CHART_NAME(myapp-dev) + chart myapp
+# Helm release name for staging myapp
+K8S_MYAPP_RELEASE_STAGING ?= myapp-staging-myapp# Release name is derived; Helm release= CHART_NAME(myapp-staging) + chart myapp
+# Helm release name for prod myapp
+K8S_MYAPP_RELEASE_PROD    ?= myapp-prod-myapp# Release name is derived; Helm release= CHART_NAME(myapp-prod) + chart myapp
+
+
+# ---------- APP NAMESPACES PER ENV ------------------------
+# These match manifests/myapp-dev.yaml
+# Namespace for dev myapp workloads
+K8S_APP_NAMESPACE_DEV           ?= myapp-dev
+# Namespace for staging myapp workloads
+K8S_APP_NAMESPACE_STAGING       ?= myapp-staging
+# Namespace for prod myapp workloads
+K8S_APP_NAMESPACE_PROD          ?= myapp-prod
+
+
+# ----------------------------------------------------------------------------------------------------------------
+#				                                    Helmfile 
+#               
+# -----------------------------------------------------------------------------------------------------------------
+.PHONY : k8s-install-helmfile
+k8s-install-helmfile: ## Install helmfile
+	@echo "Install helmfile"
+	curl -Lo /tmp/helmfile_1.6.0_linux_amd64.tar.gz \
+	https://github.com/helmfile/helmfile/releases/download/v1.6.0/helmfile_1.6.0_linux_amd64.tar.gz
+	tar -xzf /tmp/helmfile_1.6.0_linux_amd64.tar.gz -C /tmp
+
+	sudo install /tmp/helmfile /usr/local/bin/helmfile
+	@echo "Check Helmfile version"
+	helmfile version
+
+.PHONY : k8s-check-compatibility-between-helm-helmfile
+k8s-check-compatibility-between-helm-helmfile : ## heck-compatibility-between-helm-helmfile
+# 	@echo "helm version --short"
+	helm version --short
+# 	@echo "helmfile --version"
+	helmfile --version
+# 	@echo "which helm"
+	which helm
+# 	@echo "which helmfile"
+	which helmfile
+
+.PHONY : k8s-diff-for-dev-before-apply
+k8s-diff-for-dev-before-apply: ## Diff what would change in dev
+	@echo "Diff what would change in dev"
+	helmfile -f helmfile.yaml.gotmpl diff --environment dev
+
+.PHONY : k8s-apply-for-dev
+k8s-apply-for-dev: ## Apply to dev
+	@echo "Apply to dev"
+	helmfile -f helmfile.yaml.gotmpl apply --environment dev
+
+.PHONY : k8s-check-status-for-dev
+k8s-check-status-for-dev: ## Check status
+	@echo "Check status"
+	helmfile -f helmfile.yaml.gotmpl status --environment dev
+
+
+
+
+
+
+

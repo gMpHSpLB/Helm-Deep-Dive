@@ -1,0 +1,31 @@
+environments:
+  dev:
+    values:
+      - environment: dev
+        namespace: myapp-dev
+  staging:
+    values:
+      - environment: staging
+        namespace: myapp-staging
+  prod:
+    values:
+      - environment: prod
+        namespace: myapp-prod
+
+---
+releases:
+  - name: myapp-{{ .Environment.Name }}-myapp
+    namespace: {{ .Environment.Values.namespace }}
+    chart: ./charts/myapp
+    version: "1.0.0"
+
+    values:
+      - charts/myapp/values.yaml
+      - charts/myapp/values-{{ .Environment.Name }}.yaml
+
+    set:
+      - name: image.tag
+        value: "1.25-alpine"
+
+    wait: true
+    timeout: 300
