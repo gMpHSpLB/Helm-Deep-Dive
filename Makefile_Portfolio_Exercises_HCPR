@@ -1,0 +1,168 @@
+# --------------------------------------------------------------------------------------------
+#							Project : Helm-Chart-Packaging-Releasing
+# --------------------------------------------------------------------------------------------
+# Use Bash for shell commands in recipes.
+# This gives us better shell features than plain sh.
+SHELL := /bin/bash
+
+# Default target
+.DEFAULT_GOAL := help
+.PHONY: help
+# Self-documenting help: list targets with "##" comments
+help: ## Show all available targets with short descriptions.
+	# This target reads the Makefile and prints any line ending with ##.
+	# Use this when you want to discover available commands quickly.
+	# Expected output: a list of targets and one-line descriptions.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s --> %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY:
+
+# ------------------------------ GLOBAL CONFIG --------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------------------
+MINIKUBE_PROFILE                ?= k8s-learning
+
+# Kubernetes directories
+K8S_NAMESPACE_DIR               ?= manifests/namespaces
+K8S_CONFIGMAP_DIR               ?= manifests/configmaps
+K8S_SECRETS_DIR                 ?= manifests/secrets
+K8S_PODS_DIR                    ?= manifests/pods
+K8S_DEPLOYMENTS_DIR             ?= manifests/deployments
+K8S_SERVICES_DIR                ?= manifests/services
+
+# ------------------------------------------------------------
+# myapp Helm chart and env values
+K8S_APP_HELM_CHART_DIR			?= charts/myapp
+K8S_APP_DEV_VALUES_FILE			?= charts/myapp/values-dev.yaml
+K8S_APP_STAGING_VALUES_FILE		?= charts/myapp/values-staging.yaml
+K8S_APP_PROD_VALUES_FILE		?= charts/myapp/values-prod.yaml
+
+# ---------- HELM RELEASE NAMES PER ENV ----------
+# Keep releases separate so dev/staging/prod can be managed independently.
+# Helm release name for dev myapp
+K8S_MYAPP_RELEASE_DEV     ?= myapp-dev-myapp# Release name is derived; Helm release= CHART_NAME(myapp-dev) + chart myapp
+# Helm release name for staging myapp
+K8S_MYAPP_RELEASE_STAGING ?= myapp-staging-myapp# Release name is derived; Helm release= CHART_NAME(myapp-staging) + chart myapp
+# Helm release name for prod myapp
+K8S_MYAPP_RELEASE_PROD    ?= myapp-prod-myapp# Release name is derived; Helm release= CHART_NAME(myapp-prod) + chart myapp
+
+
+# ---------- APP NAMESPACES PER ENV ------------------------
+# These match manifests/myapp-dev.yaml
+# Namespace for dev myapp workloads
+K8S_APP_NAMESPACE_DEV           ?= myapp-dev
+# Namespace for staging myapp workloads
+K8S_APP_NAMESPACE_STAGING       ?= myapp-staging
+# Namespace for prod myapp workloads
+K8S_APP_NAMESPACE_PROD          ?= myapp-prod
+
+# -----------------------------------------------------------------------------------
+#								Portfolio Exercises 
+# -----------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------
+#   Exercise 1 — Debug a Silent Values Merge Failure
+#
+#   Task: Write a helm template command that proves the map-replacement trap from 
+#   Exercise 4 is happening. Then write the correct fix.
+#
+# -----------------------------------------------------------------------------------
+.PHONY: k8s-map-replacement-trap-not-merge
+k8s-map-replacement-trap-not-merge: ## Proves map replacement, not merge for nested map
+	@echo "Create a partial override that only sets one key in a nested map"
+	@printf '%s\n' \
+		'config:' \
+		'  APP_LOG_LEVEL: "debug"' \
+		> /tmp/prove-merge-bug.yaml
+	@echo "Render and grep for config keys"
+	@echo "Note: You will see ONLY APP_LOG_LEVEL — all other config keys are gone"
+	@echo "This proves map replacement, not merge. This is the map replacement trap."
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+		-f /tmp/prove-merge-bug.yaml \
+		--namespace $(K8S_APP_NAMESPACE_DEV) | grep -A 20 "kind: ConfigMap"
+
+.PHONY : k8s-how-to-avoid-map-replacement-trap
+k8s-how-to-avoid-map-replacement-trap: ## how-to-avoid-map-replacement-trap
+	@echo "THE FIX: always merge at the key level with --set for individual overrides"
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--set config.APP_LOG_LEVEL=debug \
+	--namespace $(K8S_APP_NAMESPACE_DEV) | grep -A 20 "kind: ConfigMap"
+
+# -----------------------------------------------------------------------------------
+#   Exercise 2 — Write a Helm Test
+#
+#   Task: Helm has a built-in testing mechanism using helm test. 
+#         Write a test pod that validates the service is reachable. 
+#   
+# -----------------------------------------------------------------------------------
+.PHONY : k8s-run-test-pod-using-helm-test
+k8s-run-test-pod-using-helm-test: ## Run a test pod (charts/myapp/templates/tests/test-connection.yaml) using helm test
+	@echo "Run the test pod (templates/tests/test-connection.yaml) using helm test"
+	helm test $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV) --logs
+
+# ---------------------------------------------------------------------------------------
+#
+# 	Exercise 3 — Understand the HPA + Replicas Conflict at Code Level
+#	Task: Explain exactly what happens in the cluster if you set both 
+#		  autoscaling.enabled: true AND replicas: 5 in the same values 
+#		  file, with and without the conditional in the deployment template.
+#	Answer:
+#	Without the conditional ({{- if not .Values.autoscaling.enabled }}), the Deployment 
+# 	would have spec.replicas: 5. The HPA also targets the same Deployment.
+# 
+# 	What happens:
+# 		1.	HPA is created. It starts managing the Deployment replica count.
+# 		2.	HPA scales to, say, 3 replicas based on low CPU.
+# 		3.	The Deployment controller sees spec.replicas: 5 in its desired state 
+#			(stored in etcd) and reconciles back to 5.
+# 		4.	HPA sees 5 replicas, determines that's too many, scales back to 3.
+# 		5.	Deployment controller reconciles to 5 again.
+# 		6.	This loop continues indefinitely — the controllers fight each other.
+#	
+# 	With the conditional: when autoscaling.enabled: true, the replicas field is 
+# 	completely absent from the rendered Deployment. The HPA is the sole authority 
+# 	on replica count. The Deployment controller's desired state has no replica field 
+# 	to fight over. The HPA wins cleanly.
+#
+# -----------------------------------------------------------------------------------------
+.PHONY : k8s-verify-hpa-autoscaling-and-replica-relation-with-conditional
+k8s-verify-hpa-autoscaling-and-replica-relation-with-conditional: ## verify-hpa-autoscaling-and-replica-relation-with-conditional
+	@echo "With HPA disabled — replicas field present"
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--namespace $(K8S_APP_NAMESPACE_DEV) | grep "replicas:"
+
+	@echo "With HPA enabled — replicas field should be absent"
+	@echo "No output — field is correctly absent"
+	helm template $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
+	-f $(K8S_APP_DEV_VALUES_FILE) \
+	--set autoscaling.enabled=true \
+	--namespace $(K8S_APP_NAMESPACE_DEV) | grep "replicas:" || true
+
+# --------------------------------------------------------------------------------------
+#	Exercise 4 — Find What Changed Between Two Revisions
+#	Task: You have a FAILED upgrade in history. Find exactly which 
+#		  field changed between revision 1 and revision 2 without looking at Git.
+#
+# ---------------------------------------------------------------------------------------
+.PHONY: k8s-get-diff-between-two-helm-revisions
+k8s-get-diff-between-two-helm-revisions: ## Find What Changed Between Two Helm Revisions
+# Get manifests from each revision
+helm get manifest myapp-dev --revision 1 -n myapp-dev > /tmp/rev1.yaml
+helm get manifest myapp-dev --revision 2 -n myapp-dev > /tmp/rev2.yaml
+
+# Diff them
+diff /tmp/rev1.yaml /tmp/rev2.yaml
+
+# Or use coloured diff
+diff --color /tmp/rev1.yaml /tmp/rev2.yaml
+
+# Also compare the values that produced each revision
+helm get values myapp-dev --revision 1 -n myapp-dev > /tmp/vals1.yaml
+helm get values myapp-dev --revision 2 -n myapp-dev > /tmp/vals2.yaml
+diff --color /tmp/vals1.yaml /tmp/vals2.yaml
+This is your primary post-incident investigation tool when you need to know what changed between the last-good and failed deployment without access to the CI logs.
+
+
+
+

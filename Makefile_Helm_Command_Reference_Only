@@ -1,0 +1,201 @@
+# Helm Command Reference
+### Complete Command Table (Helm 3.15+)
++----------------------+------------+------------------------------------------+----------------------------------------+
+| Command              | Category   | Purpose                                  | When to use                            |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm create          | Scaffold   | Generate a new chart directory with      | Starting a new chart from scratch      |
+|                      |            | best-practice structure                  |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm lint            | Validate   | Check chart for syntax errors and        | In CI before every release; locally    |
+|                      |            | best-practice violations                 | before every commit                   |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm template        | Render     | Render templates client-side without     | Inspect what will be deployed; debug  |
+|                      |            | submitting to cluster                    | template logic                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm install         | Deploy     | Install a chart as a new named release   | First deployment of an application    |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm upgrade         | Deploy     | Upgrade an existing release or install   | All subsequent deployments            |
+|                      |            | if not present                           |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm upgrade --install | Deploy   | Idempotent install-or-upgrade            | CI pipelines — works on first run and |
+|                      |            |                                          | all subsequent runs                   |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm rollback        | Recovery   | Revert a release to a previous revision  | Incident response; failed upgrade     |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm uninstall       | Lifecycle  | Delete a release and all its managed     | Decommissioning; cleanup              |
+|                      |            | resources                                |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm list            | Inspect    | List all releases in a namespace or      | Operational overview                  |
+|                      |            | cluster                                  |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm status          | Inspect    | Show deployment status of a specific     | Verify a release is healthy           |
+|                      |            | release                                  |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm get manifest    | Inspect    | Retrieve the rendered manifests from a   | Post-incident analysis; compare       |
+|                      |            | specific revision                        | revisions                             |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm get values      | Inspect    | Retrieve the values used for a specific  | Audit what config was applied         |
+|                      |            | revision                                |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm get all         | Inspect    | Retrieve manifest + values + notes for   | Full release state dump               |
+|                      |            | a revision                              |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm history         | Audit      | Show revision history for a release      | Audit trail; find revision to roll    |
+|                      |            |                                          | back to                               |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm repo add        | Registry   | Register a chart repository              | Adding community or private chart     |
+|                      |            |                                          | sources                               |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm repo update     | Registry   | Refresh cached chart index from all       | Before helm search or helm pull       |
+|                      |            | registered repos                         |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm repo list       | Registry   | List all registered chart repositories    | Inventory of chart sources            |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm search repo     | Discovery  | Search registered repositories for charts| Finding available charts and versions |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm search hub      | Discovery  | Search Artifact Hub (public charts)      | Finding community charts              |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm pull            | Fetch      | Download a chart tarball from a          | Inspect a chart locally; air-gapped   |
+|                      |            | repository                              | deployments                          |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm show chart      | Inspect    | Display Chart.yaml from a chart          | View chart metadata and version       |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm show values     | Inspect    | Display default values.yaml from a       | Understand configurable parameters    |
+|                      |            | chart                                   |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm show readme     | Inspect    | Display chart README                    | Documentation                         |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm dependency update | Dependencies | Download chart dependencies declared in | Before building a chart with          |
+|                      |            | Chart.yaml                              | sub-charts                           |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm dependency build | Dependencies | Build dependencies from Chart.lock       | Reproducible builds from lockfile     |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm package         | Publish    | Package a chart directory into a .tgz    | CI publish step; chart release       |
+|                      |            | artefact                                |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm test            | Test       | Execute test hooks defined in           | Post-deploy smoke testing             |
+|                      |            | templates/tests/                        |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm diff upgrade    | Safety     | Show the diff of what would change      | Mandatory before every production    |
+|                      |            | before applying                         | upgrade                               |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm plugin install  | Extension  | Install a Helm plugin                   | Adding helm-diff, helm-unittest,      |
+|                      |            |                                         | helm-secrets                          |
++----------------------+------------+------------------------------------------+----------------------------------------+
+| helm env             | Debug      | Print Helm environment variables and    | Diagnosing configuration issues       |
+|                      |            | paths                                   |                                        |
++----------------------+------------+------------------------------------------+----------------------------------------+
+
+Command Examples (Current Syntax)
+bash
+# ── SCAFFOLD ─────────────────────────────────────────────────────────
+helm create myapp
+# Creates charts/myapp/ with deployment, service, ingress, HPA, SA templates
+
+# ── VALIDATE ─────────────────────────────────────────────────────────
+helm lint ./charts/myapp -f charts/myapp/values-prod.yaml --strict
+# Strict mode treats warnings as errors — use in CI
+
+# ── RENDER WITHOUT DEPLOYING ─────────────────────────────────────────
+helm template myapp-prod ./charts/myapp \
+  -f charts/myapp/values-prod.yaml \
+  --namespace myapp-prod \
+  --kube-version 1.30 \
+  --api-versions policy/v1/PodDisruptionBudget \
+  --debug
+
+# --kube-version: validates capability() calls against the target k8s version
+# --api-versions: injects available API groups for capability checks
+
+# ── IDEMPOTENT DEPLOY ────────────────────────────────────────────────
+helm upgrade --install myapp-prod ./charts/myapp \
+  -f charts/myapp/values-prod.yaml \
+  --set image.tag="${GITHUB_SHA}" \
+  --namespace myapp-prod \
+  --create-namespace \
+  --atomic \
+  --cleanup-on-fail \
+  --timeout 10m \
+  --wait \
+  --history-max 10
+
+# --atomic: auto-rollback on failure (no stuck FAILED releases)
+# --cleanup-on-fail: delete new resources created during a failed upgrade
+# --history-max: keep only the last N revisions (prevents Secret accumulation)
+# --wait: block until all resources are healthy
+
+# ── PRE-UPGRADE DIFF ─────────────────────────────────────────────────
+helm diff upgrade myapp-prod ./charts/myapp \
+  -f charts/myapp/values-prod.yaml \
+  --set image.tag="${GITHUB_SHA}" \
+  --namespace myapp-prod \
+  --suppress-secrets \
+  --output dyff
+
+# --suppress-secrets: redacts Secret data in diff output (security)
+# --output dyff: human-friendly diff format (requires dyff binary)
+
+# ── AUDIT ────────────────────────────────────────────────────────────
+helm history myapp-prod -n myapp-prod --max 20 --output table
+
+helm get manifest myapp-prod -n myapp-prod --revision 14 > revision-14.yaml
+helm get manifest myapp-prod -n myapp-prod --revision 13 > revision-13.yaml
+diff revision-13.yaml revision-14.yaml
+
+# ── ROLLBACK ─────────────────────────────────────────────────────────
+helm rollback myapp-prod 13 \
+  -n myapp-prod \
+  --wait \
+  --timeout 5m
+# Rollback creates revision 15 (new revision, not time-reversal)
+# Previous revision 14 remains in history for audit purposes
+
+# ── REGISTRY OPERATIONS ──────────────────────────────────────────────
+# Add OCI registry (Helm 3.8+ — now stable, not experimental)
+helm registry login registry.example.com \
+  --username $REGISTRY_USER \
+  --password $REGISTRY_PASSWORD
+
+# Push chart to OCI registry
+helm package ./charts/myapp --version 1.4.2
+helm push myapp-1.4.2.tgz oci://registry.example.com/charts
+
+# Pull from OCI registry
+helm pull oci://registry.example.com/charts/myapp --version 1.4.2
+
+# ── SHOW CHART INFO ──────────────────────────────────────────────────
+helm show chart oci://registry.example.com/charts/myapp --version 1.4.2
+helm show values oci://registry.example.com/charts/myapp --version 1.4.2
+
+# ── DEPENDENCY MANAGEMENT ────────────────────────────────────────────
+# Chart.yaml declares dependencies:
+# dependencies:
+#   - name: postgresql
+#     version: "15.x.x"
+#     repository: "oci://registry-1.docker.io/bitnamicharts"
+#     condition: postgresql.enabled
+
+helm dependency update ./charts/myapp
+# Downloads dependencies to charts/myapp/charts/
+# Creates Chart.lock with exact versions
+
+helm dependency build ./charts/myapp
+# Downloads exactly what Chart.lock specifies (reproducible)
+
+# ── ENVIRONMENT INSPECTION ───────────────────────────────────────────
+helm env
+# Shows HELM_DATA_HOME, HELM_CACHE_HOME, HELM_CONFIG_HOME, etc.
+# Useful when debugging plugin or repository issues
+
+# ── TEST ─────────────────────────────────────────────────────────────
+helm test myapp-prod -n myapp-prod \
+  --timeout 5m \
+  --logs
+# Runs all pods with annotation: helm.sh/hook: test
+# Returns exit code 0 if all tests pass (use in CI)
+
+# ── PLUGIN MANAGEMENT ────────────────────────────────────────────────
+helm plugin install https://github.com/databus23/helm-diff
+helm plugin install https://github.com/helm-unittest/helm-unittest
+helm plugin install https://github.com/jkroepke/helm-secrets
+helm plugin list

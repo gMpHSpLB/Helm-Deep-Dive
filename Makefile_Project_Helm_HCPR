@@ -1,3 +1,6 @@
+# --------------------------------------------------------------------------------------------
+#							Project : Helm-Chart-Packaging-Releasing
+# --------------------------------------------------------------------------------------------
 # Use Bash for shell commands in recipes.
 # This gives us better shell features than plain sh.
 SHELL := /bin/bash
@@ -224,7 +227,7 @@ k8s-helm-serverside-install-all-templates-for-dev: ## Server-side — validates 
 # Server-side uuninstall — validates against real API schema
 .PHONY : k8s-helm-serverside-uninstall-all-templates-for-dev
 k8s-helm-serverside-uninstall-all-templates-for-dev: ## Fresh Helm start, Uninstall helm release all templates for dev
-	helm uninstall m$(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
+	helm uninstall $(K8S_MYAPP_RELEASE_DEV) -n $(K8S_APP_NAMESPACE_DEV)
 
 .PHONY : k8s-verify-installed-helm-release-for-dev
 k8s-verify-installed-helm-release-for-dev: ## Verify Installed Helm Release for dev

@@ -1,0 +1,63 @@
+# Comprehensive kubectl Command Reference
+# These are the commands you will use every single day. Memorise the patterns, not the specific commands.
+# bash
+# ── GET ──────────────────────────────────────────────────────────────────────
+# List resources
+kubectl get pods -n myapp-dev
+kubectl get pods -n myapp-dev -o wide          # Extra columns: IP, Node
+kubectl get pods -n myapp-dev -o yaml          # Full YAML spec
+kubectl get pods -n myapp-dev -o json          # JSON format
+kubectl get pods -n myapp-dev -l app=myapp     # Filter by label
+kubectl get pods --all-namespaces              # All namespaces
+kubectl get all -n myapp-dev                   # All resource types
+
+# ── DESCRIBE ─────────────────────────────────────────────────────────────────
+# Human-readable details including Events — your primary debug tool
+kubectl describe pod <pod-name> -n myapp-dev
+kubectl describe deployment myapp -n myapp-dev
+kubectl describe service myapp -n myapp-dev
+kubectl describe node k8s-learning
+
+# ── LOGS ─────────────────────────────────────────────────────────────────────
+kubectl logs <pod-name> -n myapp-dev
+kubectl logs <pod-name> -n myapp-dev -f                    # Follow (stream)
+kubectl logs <pod-name> -n myapp-dev --previous            # Previous container instance
+kubectl logs <pod-name> -n myapp-dev --tail=100            # Last 100 lines
+kubectl logs <pod-name> -n myapp-dev -c <container-name>   # Specific container
+kubectl logs -l app=myapp -n myapp-dev                     # All pods with this label
+
+# ── EXEC ─────────────────────────────────────────────────────────────────────
+# Run commands inside a running container
+kubectl exec -it <pod-name> -n myapp-dev -- sh
+kubectl exec -it <pod-name> -n myapp-dev -- ls /etc/myapp
+kubectl exec -it <pod-name> -n myapp-dev -- env | grep APP
+
+# ── PORT-FORWARD ──────────────────────────────────────────────────────────────
+# Forward a local port to a pod or service
+kubectl port-forward pod/<pod-name> 8080:80 -n myapp-dev
+kubectl port-forward service/myapp 8080:80 -n myapp-dev
+
+# ── EVENTS ───────────────────────────────────────────────────────────────────
+# Cluster-wide events sorted by time — underused but essential
+kubectl get events -n myapp-dev --sort-by='.lastTimestamp'
+kubectl get events -n myapp-dev --field-selector reason=BackOff
+
+# ── ROLLOUT ───────────────────────────────────────────────────────────────────
+kubectl rollout status deployment/myapp -n myapp-dev
+kubectl rollout history deployment/myapp -n myapp-dev
+kubectl rollout undo deployment/myapp -n myapp-dev
+kubectl rollout undo deployment/myapp -n myapp-dev --to-revision=1
+
+# ── RESOURCE USAGE ───────────────────────────────────────────────────────────
+kubectl top pods -n myapp-dev
+kubectl top nodes
+
+# ── DRY RUN ──────────────────────────────────────────────────────────────────
+# Validate YAML without applying — essential before any prod change
+kubectl apply -f manifests/deployments/myapp-deployment.yaml --dry-run=client
+kubectl apply -f manifests/deployments/myapp-deployment.yaml --dry-run=server
+
+# ── DIFF ─────────────────────────────────────────────────────────────────────
+# See what would change before applying
+kubectl diff -f manifests/deployments/myapp-deployment.yaml
+________________________________________
