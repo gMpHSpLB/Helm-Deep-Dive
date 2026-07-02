@@ -147,21 +147,26 @@ k8s-verify-hpa-autoscaling-and-replica-relation-with-conditional: ## verify-hpa-
 # ---------------------------------------------------------------------------------------
 .PHONY: k8s-get-diff-between-two-helm-revisions
 k8s-get-diff-between-two-helm-revisions: ## Find What Changed Between Two Helm Revisions
-# Get manifests from each revision
-helm get manifest myapp-dev --revision 1 -n myapp-dev > /tmp/rev1.yaml
-helm get manifest myapp-dev --revision 2 -n myapp-dev > /tmp/rev2.yaml
+	@echo "This is your primary post-incident investigation \
+	tool when you need to know what changed between the last-good \
+	and failed deployment without access to the CI logs."
 
-# Diff them
-diff /tmp/rev1.yaml /tmp/rev2.yaml
+	@echo "Get manifests from each revision"
+	helm get manifest $(K8S_MYAPP_RELEASE_DEV) --revision 2 -n $(K8S_APP_NAMESPACE_DEV) > /tmp/rev1.yaml
+	helm get manifest $(K8S_MYAPP_RELEASE_DEV) --revision 3 -n $(K8S_APP_NAMESPACE_DEV) > /tmp/rev2.yaml
 
-# Or use coloured diff
-diff --color /tmp/rev1.yaml /tmp/rev2.yaml
+	@echo "Get Diff of manifest files of both versions: "
+	diff /tmp/rev1.yaml /tmp/rev2.yaml
 
-# Also compare the values that produced each revision
-helm get values myapp-dev --revision 1 -n myapp-dev > /tmp/vals1.yaml
-helm get values myapp-dev --revision 2 -n myapp-dev > /tmp/vals2.yaml
-diff --color /tmp/vals1.yaml /tmp/vals2.yaml
-This is your primary post-incident investigation tool when you need to know what changed between the last-good and failed deployment without access to the CI logs.
+	@echo "Or use coloured Diff: "
+	diff --color /tmp/rev1.yaml /tmp/rev2.yaml
+
+	@echo "Also compare the values that produced each revision"
+	helm get values $(K8S_MYAPP_RELEASE_DEV) --revision 2 -n $(K8S_APP_NAMESPACE_DEV) > /tmp/vals1.yaml
+	helm get values $(K8S_MYAPP_RELEASE_DEV) --revision 3 -n $(K8S_APP_NAMESPACE_DEV) > /tmp/vals2.yaml
+	@echo "Get Diff of values of both versions: "
+	diff --color /tmp/vals1.yaml /tmp/vals2.yaml
+
 
 
 

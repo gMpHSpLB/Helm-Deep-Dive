@@ -258,7 +258,7 @@ k8s-change-log-level-by-helm-upgrade: ## Change log level via upgrade (simulatin
 	helm upgrade $(K8S_MYAPP_RELEASE_DEV) $(K8S_APP_HELM_CHART_DIR) \
 	-f $(K8S_APP_DEV_VALUES_FILE) \
 	--namespace $(K8S_APP_NAMESPACE_DEV) \
-	--set config.APP_LOG_LEVEL=debug \
+	--set config.APP_LOG_LEVEL=info \
 	--wait
 
 # -------------------------------------------------------------------------------------------------------
